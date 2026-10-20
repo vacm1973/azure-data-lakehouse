@@ -1,0 +1,46 @@
+
+from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, trim, upper
+
+# Silver layer: clean and validate synthetic banking data
+
+def main():
+    spark = (
+        SparkSession.builder
+        .appName("AzureLakehouseSilver")
+        .getOrCreate()
+    )
+
+    bronze_df = spark.read.parquet(
+        "data/bronze/transactions"
+    )
+
+    silver_df = (
+        bronze_df
+        .withColumn(
+            "status", upper(trim(col("status")))
+        )
+        .filter(col("transaction_id").isNotNull())
+        .filter(col("customer_id").isNotNull())
+        .filter(col("amount").isNotNull())
+        .filter(col("amount") > 0)
+        .filter(
+            col("status").isin(
+                "COMPLETED", "FAILED", "PENDING"
+            )
+        )
+        .dropDuplicates(["transaction_id"])
+    )
+
+    silver_df.write.mode("overwrite").parquet(
+        "data/silver/transactions"
+    )
+
+    print("Silver transformation completed")
+    print(f"Valid records: {silver_df.count()}")
+
+    spark.stop()
+
+
+if __name__ == "__main__":
+    main()
